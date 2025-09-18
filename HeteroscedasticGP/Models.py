@@ -6,81 +6,57 @@ class BasicRegressor:
 
         pass
 
-    def find_gram_matrix(self, theta):
-        """
-        Description
-        -----------
-            Method that computes the gram matrix (not
-                including noise terms)
+def find_gram_matrix(self, params: dict):
+    """
+    Compute Gram matrix for Gaussian Process.
 
-        Parameters
-        ----------
-            theta : numpy array of GP hyperparameters
+    Parameters
+    ----------
+    params : dict
+        Dictionary containing kernel hyperparameters.
+        - If ARD is False: expects {"lengthscale": value}.
+        - If ARD is True: expects {"lengthscale 1": v1, "lengthscale 2": v2, ..., "lengthscale D": vD}.
+    """
 
-        Returns
-        -------
-            K : gram matrix
-        """
+    if not self.ARD:
+        # Single shared lengthscale
+        ls = params["lengthscale"]
+        squared_dist = cdist(self.X, self.X, metric="sqeuclidean")
+        K = np.exp(-0.5 / (ls**2) * squared_dist)
 
-        if self.ARD is False:
-                ls = theta[0]
-                squared_dist = cdist(self.X, self.X, metric='sqeuclidean')
-                K = np.exp(-1 / (2 * ls**2) * squared_dist)
+    else:
+        # Initialise log-kernel matrix
+        K = np.zeros([self.N, self.N])
 
-        else:
+        # Loop over input dimensions
+        for i in range(self.D):
+            # Extract lengthscale for dimension i
+            ls = params[f"lengthscale {i+1}"]
 
-            # Initialise N by N array of zeros. Ultimately, in the
-            # following code, we will evaluate K = exp(S) to
-            # get the gram matrix.
-            K = np.zeros([self.N, self.N])
+            # Compute squared distances for ith feature
+            squared_dist = cdist(
+                np.atleast_2d(self.X[:, i]).T,
+                np.atleast_2d(self.X[:, i]).T,
+                metric="sqeuclidean"
+            )
 
-            # Loop over inputs
-            for i in range(self.D):
+            # Update kernel accumulator
+            K -= 0.5 / (ls**2) * squared_dist
 
-                # Length scale for the ith input
-                ls = theta[i]
+        # Exponentiate to get Gram matrix
+        K = np.exp(K)
 
-                # Calculate squared distances for ith input
-                # (which has to be a 2D array).
-                squared_dist = cdist(np.vstack(self.X[:, i]),
-                                        np.vstack(self.X[:, i]),
-                                        metric='sqeuclidean')
+    return K
 
-                # Multiply squared distance by -1/(2 ls**2)
-                K -= 1 / (2 * ls**2) * squared_dist
 
-            # Compute gram matrix
-            K = np.exp(K)
+    def neg_log_likelihood(self, params: dict):
 
-        return K
+        pass
 
-    def neg_log_likelihood(self, theta):
-
-        # Compute gram matrix
-        sigma = theta[-1]
-        C = self.find_gram_matrix(theta) + np.eye(self.N) * sigma**2
-
-        # Find Cholesky decomposition (such that C=LL^T)
-        L = np.linalg.cholesky(C)
-
-        # Cholesky solve for alpha (C alpha = y)
-        alpha = cho_solve((L, True), self.Y)
-
-        # Evaluate negative log-likelihood; note that log|C| is the
-        # summation of diagonal terms in L
-        nll = (0.5 * self.Y.T @ alpha + np.log(np.diag(L)).sum())[0][0]
-
-        return nll
-
-    def train(self):
-
-        # Function that the solver will call to print theta per solver iteration
-        def solver_callback(x):            
-            print('lengthscales = ', np.round(x[:-1] * 100) / 100)
-            print('noise std = ', x[-1])
+    def train(self, X, Y):
 
         # Run solver
-        sol = minimize(self.neg_log_likelihood, x0=self.initial_theta, method='SLSQP', bounds=self.theta_bounds, callback=solver_callback)
+        sol = minimize(self.neg_log_likelihood, x0=self.initial_theta, method='SLSQP', bounds=self.theta_bounds)
 
         # Assign parameter estimates and solution outcome
         theta = sol.x
@@ -88,13 +64,9 @@ class BasicRegressor:
         self.nlogp = sol.fun
         self.assign_hyperparameters(theta)
 
-    def assign_hyperparameters(self, theta):
+    def assign_hyperparameters(self, params: dict):
 
-        sigma = theta[-1]
-        C = self.find_gram_matrix(theta) + np.eye(self.N) * sigma**2
-        self.theta = theta
-        self.L = np.linalg.cholesky(C)
-        self.alpha = cho_solve((self.L, True), self.Y)
+        pass
 
     def predict(self, X_star):
         pass
