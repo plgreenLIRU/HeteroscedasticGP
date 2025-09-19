@@ -41,8 +41,8 @@ class BasicRegressor:
 
     def neg_log_likelihood(self, X: np.ndarray, y: np.ndarray, z: np.ndarray,
                            f_params: dict, z_params: dict):
-        Cy = self.find_gram_matrix(X, params=f_params) + np.diag(np.exp(z))
-        Kz = self.find_gram_matrix(X, params=z_params)
+        Cy = self.find_gram_matrix(X, params=f_params) + np.diag(np.exp(z)) + 1e-6 * np.eye(len(y))
+        Kz = self.find_gram_matrix(X, params=z_params) + 1e-6 * np.eye(len(y))
 
         Ly = np.linalg.cholesky(Cy)
         Lz = np.linalg.cholesky(Kz)
@@ -89,7 +89,7 @@ class BasicRegressor:
         """
         
         theta0 = self._pack_params(f_params0, z_params0, z0)
-        res = minimize(self._objective, theta0, args=(self, X, y, list(f_params0.keys()), list(z_params0.keys()), z0.shape[0]), method="L-BFGS-B")
+        res = minimize(self._objective, theta0, args=(X, y, list(f_params0.keys()), list(z_params0.keys()), z0.shape[0]), method="L-BFGS-B")
         self.f_params_opt, self.z_params_opt, self.z_opt = self._unpack_params(res.x, f_params0.keys(), z_params0.keys(), z0.shape[0])
 
     def predict(self, X_star):
