@@ -1,72 +1,96 @@
 import numpy as np
+from scipy.spatial.distance import cdist
+from scipy.linalg import cho_solve
+from scipy.optimize import minimize
 
 class BasicRegressor:
 
-    def __init__(self):
+    def __init__(self, ARD):
 
-        pass
+        self.ARD = ARD
 
-def find_gram_matrix(self, params: dict):
-    """
-    Compute Gram matrix for Gaussian Process.
+    def find_gram_matrix(self, X: np.ndarray, params: dict):
 
-    Parameters
-    ----------
-    params : dict
-        Dictionary containing kernel hyperparameters.
-        - If ARD is False: expects {"lengthscale": value}.
-        - If ARD is True: expects {"lengthscale 1": v1, "lengthscale 2": v2, ..., "lengthscale D": vD}.
-    """
+        N, D = np.shape(X)
 
-    if not self.ARD:
-        # Single shared lengthscale
-        ls = params["lengthscale"]
-        squared_dist = cdist(self.X, self.X, metric="sqeuclidean")
-        K = np.exp(-0.5 / (ls**2) * squared_dist)
+        if not self.ARD:
+            # Single shared lengthscale
+            ls = params["lengthscale"]
+            squared_dist = cdist(X, X, metric="sqeuclidean")
+            K = np.exp(-0.5 / (ls**2) * squared_dist)
 
-    else:
-        # Initialise log-kernel matrix
-        K = np.zeros([self.N, self.N])
+        else:
+            # Initialise log-kernel matrix
+            K = np.zeros([N, N])
 
-        # Loop over input dimensions
-        for i in range(self.D):
-            # Extract lengthscale for dimension i
-            ls = params[f"lengthscale {i+1}"]
+            # Loop over input dimensions
+            for i in range(D):
+                # Extract lengthscale for dimension i
+                ls = params[f"lengthscale {i+1}"]
 
-            # Compute squared distances for ith feature
-            squared_dist = cdist(
-                np.atleast_2d(self.X[:, i]).T,
-                np.atleast_2d(self.X[:, i]).T,
-                metric="sqeuclidean"
-            )
+                # Compute squared distances for ith feature
+                squared_dist = cdist(np.atleast_2d(X[:, i]).T, np.atleast_2d(X[:, i]).T, metric="sqeuclidean")
 
-            # Update kernel accumulator
-            K -= 0.5 / (ls**2) * squared_dist
+                # Update kernel accumulator
+                K -= 0.5 / (ls**2) * squared_dist
 
-        # Exponentiate to get Gram matrix
-        K = np.exp(K)
+            # Exponentiate to get Gram matrix
+            K = np.exp(K)
 
-    return K
+        return K
 
+    def neg_log_likelihood(self, X: np.ndarray, y: np.ndarray, z: np.ndarray,
+                           f_params: dict, z_params: dict):
+        Cy = self.find_gram_matrix(X, params=f_params) + np.diag(np.exp(z))
+        Kz = self.find_gram_matrix(X, params=z_params)
 
-    def neg_log_likelihood(self, params: dict):
+        Ly = np.linalg.cholesky(Cy)
+        Lz = np.linalg.cholesky(Kz)
 
-        pass
+        alpha_y = cho_solve((Ly, True), y)
+        alpha_z = cho_solve((Lz, True), z)
 
-    def train(self, X, Y):
+        neg_logl = (0.5 * y.T @ alpha_y + np.log(np.diag(Ly)).sum() +
+                    0.5 * z.T @ alpha_z + np.log(np.diag(Lz)).sum())
 
-        # Run solver
-        sol = minimize(self.neg_log_likelihood, x0=self.initial_theta, method='SLSQP', bounds=self.theta_bounds)
+        return neg_logl
 
-        # Assign parameter estimates and solution outcome
-        theta = sol.x
-        self.sol = sol
-        self.nlogp = sol.fun
-        self.assign_hyperparameters(theta)
+    def _pack_params(self, f_params: dict, z_params: dict, z: np.ndarray) -> np.ndarray:
+        """
+        Function to take parameter dictionaries & latent vector z and create
+        a corresponding numpy array.
+        """
+        theta = np.concatenate([np.array(list(f_params.values()), dtype=float), np.array(list(z_params.values()), dtype=float), z.ravel()])    
+        return theta
 
-    def assign_hyperparameters(self, params: dict):
+    def _unpack_params(self, theta: np.ndarray, f_keys, z_keys, z_dim: int):
+        """
+        Function to convert parameter vector theta back into dictionaries
+        """
+        f_size = len(f_keys)
+        z_size = len(z_keys)        
+        f_params = {k: v for k, v in zip(f_keys, theta[:f_size])}
+        z_params = {k: v for k, v in zip(z_keys, theta[f_size:f_size+z_size])}
+        z = theta[f_size+z_size:].reshape(z_dim,)
+        return f_params, z_params, z
 
-        pass
+    def _objective(self, theta, X, y, f_keys, z_keys, z_dim):
+        """
+        Called during training; takes array as inputs then converts it
+        to a dictionary for the neg_log_likelihood function
+        """
+        f_params, z_params, z = self._unpack_params(theta, f_keys, z_keys, z_dim)
+        return self.neg_log_likelihood(X, y, z, f_params, z_params)
+
+    def train(self, X, y, f_params0, z_params0, z0):
+        """
+        Train model based on initial guess of f parameters, z parameters, and
+        initial guess of the array, z.
+        """
+        
+        theta0 = self._pack_params(f_params0, z_params0, z0)
+        res = minimize(self._objective, theta0, args=(self, X, y, list(f_params0.keys()), list(z_params0.keys()), z0.shape[0]), method="L-BFGS-B")
+        self.f_params_opt, self.z_params_opt, self.z_opt = self._unpack_params(res.x, f_params0.keys(), z_params0.keys(), z0.shape[0])
 
     def predict(self, X_star):
         pass
