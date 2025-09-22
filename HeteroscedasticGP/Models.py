@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.spatial.distance import cdist
-from scipy.linalg import cho_solve
+from scipy.linalg import cho_solve, solve_triangular
 from scipy.optimize import minimize
 
 class BasicRegressor:
@@ -125,9 +125,9 @@ class BasicRegressor:
         self.z_opt = z_opt
 
         # Compute matrices and vectors needed for predictions
-        Cy = self.find_gram_matrix(X, params=f_params) + np.diag(np.exp(z_opt)) + 1e-6 * np.eye(len(y))
+        self.Cy = self.find_gram_matrix(X, params=f_params) + np.diag(np.exp(z_opt)) + 1e-6 * np.eye(len(y))
         Kz = self.find_gram_matrix(X, params=z_params) + 1e-6 * np.eye(len(y))
-        self.Ly = np.linalg.cholesky(Cy)
+        self.Ly = np.linalg.cholesky(self.Cy)
         Lz = np.linalg.cholesky(Kz)
         self.alpha_y = cho_solve((self.Ly, True), y)
         self.alpha_z = cho_solve((Lz, True), z_opt)
@@ -136,8 +136,16 @@ class BasicRegressor:
         
         # Evaluate kernels evaluated between training and sprediction inputs
         K_f_star = self.find_gram_matrix(X=self.X, params=self.f_params_opt, X_star=X_star)
+        K_z_star = self.find_gram_matrix(X=self.X, params=self.z_params_opt, X_star=X_star)
+
+        # Preditive z mean
+        z_star = K_z_star.T @ self.alpha_z
         
-        # Mean prediction
+        # Predictive y mean
         mu_star = K_f_star.T @ self.alpha_y
 
-        return mu_star
+        # Predictive variance
+        v = solve_triangular(self.Ly, K_f_star, lower=True)
+        var_star = np.exp(z_star) + 1 - np.diag(v.T @ v)
+
+        return mu_star, var_star
