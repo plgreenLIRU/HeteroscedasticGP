@@ -9,27 +9,48 @@ class BasicRegressor:
 
         self.ARD = ARD
 
-    def find_gram_matrix(self, X: np.ndarray, params: dict):
+    def find_gram_matrix(self, X: np.ndarray, params: dict, X_star: np.ndarray = None):
+        """
+        Compute Gram (kernel) matrix between X and X_star under RBF kernel.
+
+        Args:
+            X: (N, D) array of training inputs
+            params: dict with "lengthscale" (or "lengthscale i" if ARD)
+            X_star: (M, D) array of test inputs (optional). 
+                    If None, computes K(X, X).
+
+        Returns:
+            K: (N, M) kernel matrix if X_star provided, else (N, N).
+        """
+        if X_star is None:
+            X_star = X
 
         N, D = np.shape(X)
+        M, D_star = np.shape(X_star)
+
+        assert D == D_star, "X and X_star must have the same number of features"
 
         if not self.ARD:
             # Single shared lengthscale
             ls = params["lengthscale"]
-            squared_dist = cdist(X, X, metric="sqeuclidean")
+            squared_dist = cdist(X, X_star, metric="sqeuclidean")
             K = np.exp(-0.5 / (ls**2) * squared_dist)
 
         else:
             # Initialise log-kernel matrix
-            K = np.zeros([N, N])
+            K = np.zeros([N, M])
 
             # Loop over input dimensions
             for i in range(D):
                 # Extract lengthscale for dimension i
                 ls = params[f"lengthscale {i+1}"]
 
-                # Compute squared distances for ith feature
-                squared_dist = cdist(np.atleast_2d(X[:, i]).T, np.atleast_2d(X[:, i]).T, metric="sqeuclidean")
+                # Compute squared distances for ith feature between X and X_star
+                squared_dist = cdist(
+                    np.atleast_2d(X[:, i]).T, 
+                    np.atleast_2d(X_star[:, i]).T, 
+                    metric="sqeuclidean"
+                )
 
                 # Update kernel accumulator
                 K -= 0.5 / (ls**2) * squared_dist
@@ -38,6 +59,7 @@ class BasicRegressor:
             K = np.exp(K)
 
         return K
+
 
     def neg_log_likelihood(self, X: np.ndarray, y: np.ndarray, z: np.ndarray,
                            f_params: dict, z_params: dict):
@@ -90,7 +112,32 @@ class BasicRegressor:
         
         theta0 = self._pack_params(f_params0, z_params0, z0)
         res = minimize(self._objective, theta0, args=(X, y, list(f_params0.keys()), list(z_params0.keys()), z0.shape[0]), method="L-BFGS-B")
-        self.f_params_opt, self.z_params_opt, self.z_opt = self._unpack_params(res.x, f_params0.keys(), z_params0.keys(), z0.shape[0])
+        f_params, z_params, z_opt = self._unpack_params(res.x, f_params0.keys(), z_params0.keys(), z0.shape[0])
+        self.assign_hyperparameters(X, y, f_params, z_params, z_opt)
+
+    def assign_hyperparameters(self, X, y, f_params, z_params, z_opt):
+
+        # Assign training data and optimal hyperparameters
+        self.X = X
+        self.y = y
+        self.f_params_opt = f_params
+        self.z_params_opt = z_params
+        self.z_opt = z_opt
+
+        # Compute matrices and vectors needed for predictions
+        Cy = self.find_gram_matrix(X, params=f_params) + np.diag(np.exp(z_opt)) + 1e-6 * np.eye(len(y))
+        Kz = self.find_gram_matrix(X, params=z_params) + 1e-6 * np.eye(len(y))
+        self.Ly = np.linalg.cholesky(Cy)
+        Lz = np.linalg.cholesky(Kz)
+        self.alpha_y = cho_solve((self.Ly, True), y)
+        self.alpha_z = cho_solve((Lz, True), z_opt)
 
     def predict(self, X_star):
-        pass
+        
+        # Evaluate kernels evaluated between training and sprediction inputs
+        K_f_star = self.find_gram_matrix(X=self.X, params=self.f_params_opt, X_star=X_star)
+        
+        # Mean prediction
+        mu_star = K_f_star.T @ self.alpha_y
+
+        return mu_star
