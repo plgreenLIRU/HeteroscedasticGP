@@ -109,6 +109,23 @@ class BasicRegressor:
         Train model based on initial guess of f parameters, z parameters, and
         initial guess of the array, z.
         """
+
+        # Find unique rows in X
+        Xu, inverse_indices, counts = np.unique(X, axis=0, return_inverse=True, return_counts=True)
+
+        # Determine whether or not we are looking at a problem with repeated inputs
+        if np.all(counts == 1):
+            self.repeated_X = False
+        else:
+            self.repeated_X = True
+            self.Xu = Xu
+
+        # If repeated X, create J_list that stores indices of unique X values
+        self.J_list = []
+        if self.repeated_X == True:
+            for u in range(len(Xu)):
+                idx = np.where(inverse_indices == u)[0]
+                self.J_list.append(idx)            
         
         theta0 = self._pack_params(f_params0, z_params0, z0)
         res = minimize(self._objective, theta0, args=(X, y, list(f_params0.keys()), list(z_params0.keys()), z0.shape[0]), method="L-BFGS-B")
