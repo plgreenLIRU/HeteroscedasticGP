@@ -60,11 +60,26 @@ class BasicRegressor:
 
         return K
 
-
     def neg_log_likelihood(self, X: np.ndarray, y: np.ndarray, z: np.ndarray,
                            f_params: dict, z_params: dict):
-        Cy = self.find_gram_matrix(X, params=f_params) + np.diag(np.exp(z)) + 1e-6 * np.eye(len(y))
-        Kz = self.find_gram_matrix(X, params=z_params) + 1e-6 * np.eye(len(y))
+
+        # If we don't have any repeated X values
+        if self.repeated_X == False:
+            Cy = self.find_gram_matrix(X, params=f_params) + np.diag(np.exp(z)) + 1e-6 * np.eye(len(y))
+            Kz = self.find_gram_matrix(X, params=z_params) + 1e-6 * np.eye(len(z))
+
+        # If we do have repeated X values
+        if self.repeated_X == True:
+
+            # Form covariance matrix
+            sigma2 = np.zeros([len(y)])
+            for u in range(self.U):
+                Ju = self.J_list[u]
+                sigma2[Ju] = np.exp(z[u])
+            Sigma2 = np.diag(sigma2)
+
+            Cy = self.find_gram_matrix(X, params=f_params) +Sigma2 + 1e-6 * np.eye(len(y))
+            Kz = self.find_gram_matrix(self.Xu, params=z_params) + 1e-6 * np.eye(len(z))
 
         Ly = np.linalg.cholesky(Cy)
         Lz = np.linalg.cholesky(Kz)
@@ -125,8 +140,9 @@ class BasicRegressor:
         if self.repeated_X == True:
             for u in range(len(Xu)):
                 idx = np.where(inverse_indices == u)[0]
-                self.J_list.append(idx)            
-        
+                self.J_list.append(idx)
+            self.U = len(self.J_list)
+
         theta0 = self._pack_params(f_params0, z_params0, z0)
         res = minimize(self._objective, theta0, args=(X, y, list(f_params0.keys()), list(z_params0.keys()), z0.shape[0]), method="L-BFGS-B")
         f_params, z_params, z_opt = self._unpack_params(res.x, f_params0.keys(), z_params0.keys(), z0.shape[0])
@@ -141,9 +157,24 @@ class BasicRegressor:
         self.z_params_opt = z_params
         self.z_opt = z_opt
 
-        # Compute matrices and vectors needed for predictions
-        self.Cy = self.find_gram_matrix(X, params=f_params) + np.diag(np.exp(z_opt)) + 1e-6 * np.eye(len(y))
-        Kz = self.find_gram_matrix(X, params=z_params) + 1e-6 * np.eye(len(y))
+        # If we don't have any repeated X values
+        if self.repeated_X == False:
+            self.Cy = self.find_gram_matrix(X, params=f_params) + np.diag(np.exp(z_opt)) + 1e-6 * np.eye(len(y))
+            Kz = self.find_gram_matrix(X, params=z_params) + 1e-6 * np.eye(len(z_opt))
+
+        # If we do have repeated X values
+        if self.repeated_X == True:
+
+            # Form covariance matrix
+            sigma2 = np.zeros([len(y)])
+            for u in range(self.U):
+                Ju = self.J_list[u]
+                sigma2[Ju] = np.exp(z_opt[u])
+            Sigma2 = np.diag(sigma2)
+
+            self.Cy = self.find_gram_matrix(X, params=f_params) +Sigma2 + 1e-6 * np.eye(len(y))
+            Kz = self.find_gram_matrix(self.Xu, params=z_params) + 1e-6 * np.eye(len(z_opt))
+
         self.Ly = np.linalg.cholesky(self.Cy)
         Lz = np.linalg.cholesky(Kz)
         self.alpha_y = cho_solve((self.Ly, True), y)
