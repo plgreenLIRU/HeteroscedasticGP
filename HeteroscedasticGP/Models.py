@@ -85,10 +85,10 @@ class BasicRegressor:
         Lz = np.linalg.cholesky(Kz)
 
         alpha_y = cho_solve((Ly, True), y)
-        alpha_z = cho_solve((Lz, True), z)
+        alpha_z = cho_solve((Lz, True), z - self.z0_mean)
 
         neg_logl = (0.5 * y.T @ alpha_y + np.log(np.diag(Ly)).sum() +
-                    0.5 * z.T @ alpha_z + np.log(np.diag(Lz)).sum())
+                    0.5 * (z - self.z0_mean).T @ alpha_z + np.log(np.diag(Lz)).sum())
 
         return neg_logl
 
@@ -119,7 +119,7 @@ class BasicRegressor:
         f_params, z_params, z = self._unpack_params(theta, f_keys, z_keys, z_dim)
         return self.neg_log_likelihood(X, y, z, f_params, z_params)
 
-    def train(self, X, y, f_params0, z_params0, z0):
+    def train(self, X, y, f_params0, z_params0, z0, z0_mean):
         """
         Train model based on initial guess of f parameters, z parameters, and
         initial guess of the array, z.
@@ -127,6 +127,9 @@ class BasicRegressor:
 
         # Find unique rows in X
         Xu, inverse_indices, counts = np.unique(X, axis=0, return_inverse=True, return_counts=True)
+
+        # Normalising constant for z
+        self.z0_mean = z0_mean
 
         # Determine whether or not we are looking at a problem with repeated inputs
         if np.all(counts == 1):
@@ -172,13 +175,13 @@ class BasicRegressor:
                 sigma2[Ju] = np.exp(z_opt[u])
             Sigma2 = np.diag(sigma2)
 
-            self.Cy = self.find_gram_matrix(X, params=f_params) +Sigma2 + 1e-6 * np.eye(len(y))
+            self.Cy = self.find_gram_matrix(X, params=f_params) + Sigma2 + 1e-6 * np.eye(len(y))
             Kz = self.find_gram_matrix(self.Xu, params=z_params) + 1e-6 * np.eye(len(z_opt))
 
         self.Ly = np.linalg.cholesky(self.Cy)
         Lz = np.linalg.cholesky(Kz)
         self.alpha_y = cho_solve((self.Ly, True), y)
-        self.alpha_z = cho_solve((Lz, True), z_opt)
+        self.alpha_z = cho_solve((Lz, True), z_opt - self.z0_mean)
 
     def predict(self, X_star):
         
@@ -199,4 +202,4 @@ class BasicRegressor:
         v = solve_triangular(self.Ly, K_f_star, lower=True)
         var_star = np.exp(z_star) + 1 - np.diag(v.T @ v)
 
-        return mu_star, var_star
+        return mu_star, var_star, z_star
