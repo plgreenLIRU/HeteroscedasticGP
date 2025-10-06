@@ -184,7 +184,10 @@ class BasicRegressor:
         
         # Evaluate kernels evaluated between training and sprediction inputs
         K_f_star = self.find_gram_matrix(X=self.X, params=self.f_params_opt, X_star=X_star)
-        K_z_star = self.find_gram_matrix(X=self.X, params=self.z_params_opt, X_star=X_star)
+        if self.repeated_X == False:
+            K_z_star = self.find_gram_matrix(X=self.X, params=self.z_params_opt, X_star=X_star)
+        if self.repeated_X == True:
+            K_z_star = self.find_gram_matrix(X=self.Xu, params=self.z_params_opt, X_star=X_star)
 
         # Preditive z mean
         z_star = K_z_star.T @ self.alpha_z
