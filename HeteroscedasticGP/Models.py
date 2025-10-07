@@ -193,7 +193,7 @@ class BasicRegressor:
             K_z_star = self.find_gram_matrix(X=self.Xu, params=self.z_params_opt, X_star=X_star)
 
         # Preditive z mean
-        z_star = K_z_star.T @ self.alpha_z
+        z_star = self.z0_mean + K_z_star.T @ self.alpha_z
         
         # Predictive y mean
         mu_star = K_f_star.T @ self.alpha_y
