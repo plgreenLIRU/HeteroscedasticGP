@@ -15,7 +15,7 @@ class BasicRegressor:
 
         Args:
             X: (N, D) array of training inputs
-            params: dict with "lengthscale" (or "lengthscale i" if ARD)
+            params: dict with "scale" and "lengthscale" (or "lengthscale i" if ARD)
             X_star: (M, D) array of test inputs (optional). 
                     If None, computes K(X, X).
 
@@ -34,7 +34,7 @@ class BasicRegressor:
             # Single shared lengthscale
             ls = params["lengthscale"]
             squared_dist = cdist(X, X_star, metric="sqeuclidean")
-            K = np.exp(-0.5 / (ls**2) * squared_dist)
+            K = params["scale"] * np.exp(-0.5 / (ls**2) * squared_dist)
 
         else:
             # Initialise log-kernel matrix
@@ -56,7 +56,7 @@ class BasicRegressor:
                 K -= 0.5 / (ls**2) * squared_dist
 
             # Exponentiate to get Gram matrix
-            K = np.exp(K)
+            K = params["scale"] * np.exp(K)
 
         return K
 
@@ -92,31 +92,60 @@ class BasicRegressor:
 
         return neg_logl
 
-    def _pack_params(self, f_params: dict, z_params: dict, z: np.ndarray) -> np.ndarray:
+    def _pack_params(self, f_params: dict, z_params: dict, z: np.ndarray):
         """
-        Function to take parameter dictionaries & latent vector z and create
-        a corresponding numpy array.
+        Combine f_params, z_params, and latent vector z into a single 1D parameter array.
+        Handles both scalar and vector-valued parameters (e.g., ARD lengthscales).
+        Returns flattened parameter array plus metadata needed for unpacking.
         """
-        theta = np.concatenate([np.array(list(f_params.values()), dtype=float), np.array(list(z_params.values()), dtype=float), z.ravel()])    
-        return theta
+        f_keys = list(f_params.keys())
+        z_keys = list(z_params.keys())
 
-    def _unpack_params(self, theta: np.ndarray, f_keys, z_keys, z_dim: int):
+        # Record shapes (so ARD params can be reconstructed)
+        f_shapes = [np.shape(np.atleast_1d(f_params[k])) for k in f_keys]
+        z_shapes = [np.shape(np.atleast_1d(z_params[k])) for k in z_keys]
+
+        # Flatten and concatenate
+        f_values = np.concatenate([np.atleast_1d(f_params[k]).ravel() for k in f_keys])
+        z_values = np.concatenate([np.atleast_1d(z_params[k]).ravel() for k in z_keys])
+        theta = np.concatenate([f_values, z_values, z.ravel()])
+
+        return theta, f_keys, z_keys, f_shapes, z_shapes
+
+    def _unpack_params(self, theta: np.ndarray, f_keys, z_keys, f_shapes, z_shapes, z_dim: int):
         """
-        Function to convert parameter vector theta back into dictionaries
+        Convert flattened parameter vector theta back into dictionaries and latent vector z.
+        Shapes for each parameter are provided so ARD parameters are restored correctly.
         """
-        f_size = len(f_keys)
-        z_size = len(z_keys)        
-        f_params = {k: v for k, v in zip(f_keys, theta[:f_size])}
-        z_params = {k: v for k, v in zip(z_keys, theta[f_size:f_size+z_size])}
-        z = theta[f_size+z_size:].reshape(z_dim,)
+        f_params = {}
+        z_params = {}
+        idx = 0
+
+        # Rebuild f_params
+        for k, shape in zip(f_keys, f_shapes):
+            size = np.prod(shape)
+            value = theta[idx:idx + size].reshape(shape)
+            f_params[k] = value.item() if value.size == 1 else value
+            idx += size
+
+        # Rebuild z_params
+        for k, shape in zip(z_keys, z_shapes):
+            size = np.prod(shape)
+            value = theta[idx:idx + size].reshape(shape)
+            z_params[k] = value.item() if value.size == 1 else value
+            idx += size
+
+        # Remaining are latent z values
+        z = theta[idx:].reshape(z_dim,)
+
         return f_params, z_params, z
 
-    def _objective(self, theta, X, y, f_keys, z_keys, z_dim):
+    def _objective(self, theta, X, y, f_keys, z_keys, f_shapes, z_shapes, z_dim):
         """
         Called during training; takes array as inputs then converts it
         to a dictionary for the neg_log_likelihood function
         """
-        f_params, z_params, z = self._unpack_params(theta, f_keys, z_keys, z_dim)
+        f_params, z_params, z = self._unpack_params(theta, f_keys, z_keys, f_shapes, z_shapes, z_dim)
         return self.neg_log_likelihood(X, y, z, f_params, z_params)
 
     def train(self, X, y, f_params0, z_params0, z0, z0_mean):
@@ -146,9 +175,9 @@ class BasicRegressor:
                 self.J_list.append(idx)
             self.U = len(self.J_list)
 
-        theta0 = self._pack_params(f_params0, z_params0, z0)
-        res = minimize(self._objective, theta0, args=(X, y, list(f_params0.keys()), list(z_params0.keys()), z0.shape[0]), method="L-BFGS-B")
-        f_params, z_params, z_opt = self._unpack_params(res.x, f_params0.keys(), z_params0.keys(), z0.shape[0])
+        theta0, f_keys, z_keys, f_shapes, z_shapes = self._pack_params(f_params0, z_params0, z0)
+        res = minimize(self._objective, theta0, args=(X, y, f_keys, z_keys, f_shapes, z_shapes, z0.shape[0]), method="L-BFGS-B")
+        f_params, z_params, z_opt = self._unpack_params(res.x, f_keys, z_keys, f_shapes, z_shapes, z0.shape[0])
         self.assign_hyperparameters(X, y, f_params, z_params, z_opt)
 
     def assign_hyperparameters(self, X, y, f_params, z_params, z_opt):
