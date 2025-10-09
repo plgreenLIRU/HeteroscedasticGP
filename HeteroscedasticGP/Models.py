@@ -9,7 +9,7 @@ class BasicRegressor:
 
         self.ARD = ARD
 
-    def find_gram_matrix(self, X: np.ndarray, params: dict, X_star: np.ndarray = None):
+    def _find_gram_mmatrix(self, X: np.ndarray, params: dict, X_star: np.ndarray=None):
         """
         Compute Gram (kernel) matrix between X and X_star under RBF kernel.
 
@@ -65,8 +65,8 @@ class BasicRegressor:
 
         # If we don't have any repeated X values
         if self.repeated_X == False:
-            Cy = self.find_gram_matrix(X, params=f_params) + np.diag(np.exp(z)) + 1e-6 * np.eye(len(y))
-            Kz = self.find_gram_matrix(X, params=z_params) + 1e-6 * np.eye(len(z))
+            Cy = self._find_gram_mmatrix(X, params=f_params) + np.diag(np.exp(z)) + 1e-6 * np.eye(len(y))
+            Kz = self._find_gram_mmatrix(X, params=z_params) + 1e-6 * np.eye(len(z))
 
         # If we do have repeated X values
         if self.repeated_X == True:
@@ -78,8 +78,8 @@ class BasicRegressor:
                 sigma2[Ju] = np.exp(z[u])
             Sigma2 = np.diag(sigma2)
 
-            Cy = self.find_gram_matrix(X, params=f_params) +Sigma2 + 1e-6 * np.eye(len(y))
-            Kz = self.find_gram_matrix(self.Xu, params=z_params) + 1e-6 * np.eye(len(z))
+            Cy = self._find_gram_mmatrix(X, params=f_params) +Sigma2 + 1e-6 * np.eye(len(y))
+            Kz = self._find_gram_mmatrix(self.Xu, params=z_params) + 1e-6 * np.eye(len(z))
 
         Ly = np.linalg.cholesky(Cy)
         Lz = np.linalg.cholesky(Kz)
@@ -162,8 +162,8 @@ class BasicRegressor:
 
         # If we don't have any repeated X values
         if self.repeated_X == False:
-            self.Cy = self.find_gram_matrix(X, params=f_params) + np.diag(np.exp(z_opt)) + 1e-6 * np.eye(len(y))
-            Kz = self.find_gram_matrix(X, params=z_params) + 1e-6 * np.eye(len(z_opt))
+            self.Cy = self._find_gram_mmatrix(X, params=f_params) + np.diag(np.exp(z_opt)) + 1e-6 * np.eye(len(y))
+            Kz = self._find_gram_mmatrix(X, params=z_params) + 1e-6 * np.eye(len(z_opt))
 
         # If we do have repeated X values
         if self.repeated_X == True:
@@ -175,8 +175,8 @@ class BasicRegressor:
                 sigma2[Ju] = np.exp(z_opt[u])
             Sigma2 = np.diag(sigma2)
 
-            self.Cy = self.find_gram_matrix(X, params=f_params) + Sigma2 + 1e-6 * np.eye(len(y))
-            Kz = self.find_gram_matrix(self.Xu, params=z_params) + 1e-6 * np.eye(len(z_opt))
+            self.Cy = self._find_gram_mmatrix(X, params=f_params) + Sigma2 + 1e-6 * np.eye(len(y))
+            Kz = self._find_gram_mmatrix(self.Xu, params=z_params) + 1e-6 * np.eye(len(z_opt))
 
         self.Ly = np.linalg.cholesky(self.Cy)
         Lz = np.linalg.cholesky(Kz)
@@ -186,11 +186,11 @@ class BasicRegressor:
     def predict(self, X_star):
         
         # Evaluate kernels evaluated between training and sprediction inputs
-        K_f_star = self.find_gram_matrix(X=self.X, params=self.f_params_opt, X_star=X_star)
+        K_f_star = self._find_gram_mmatrix(X=self.X, params=self.f_params_opt, X_star=X_star)
         if self.repeated_X == False:
-            K_z_star = self.find_gram_matrix(X=self.X, params=self.z_params_opt, X_star=X_star)
+            K_z_star = self._find_gram_mmatrix(X=self.X, params=self.z_params_opt, X_star=X_star)
         if self.repeated_X == True:
-            K_z_star = self.find_gram_matrix(X=self.Xu, params=self.z_params_opt, X_star=X_star)
+            K_z_star = self._find_gram_mmatrix(X=self.Xu, params=self.z_params_opt, X_star=X_star)
 
         # Preditive z mean
         z_star = self.z0_mean + K_z_star.T @ self.alpha_z
