@@ -135,7 +135,8 @@ $$
 $$
 
 ## Predictions
-We now use a hat to denote quantities that have been calculated post-training (e.g. $\hat{\alpha}_y$ represents $C^{-1}_{y}y$ calculated with the kernel parameters, $\theta_f$, set equal to their estimated maximum likelihood value). We define $\hat{z}$ as our estimate of the noise variance at the observed inputs. To make predictions we must get around the intractable term in our predictive equation. We can do this by holding $z_*$ equal to its expected value i.e.
+We now use a hat to denote quantities that have been calculated post-training (e.g. \( \hat{\alpha}_y \) represents \( C^{-1}_{y} y \) calculated with the kernel parameters, \( \theta_f \), set equal to their estimated maximum-likelihood value). We define \( \hat{z} \) as our estimate of the noise variance at the observed inputs. To make predictions, we must get around the intractable term in our predictive equation. We can do this by holding \( z_* \) equal to its expected value, i.e.
+
 
 $$
 \int p\left(y_* \mid f_*, z_*\right) p\left(z_* \mid x_*, X, \hat{z}\right) d z_*
