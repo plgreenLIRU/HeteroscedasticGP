@@ -61,7 +61,7 @@ class BasicRegressor:
         return K
 
     def neg_log_likelihood(self, X: np.ndarray, y: np.ndarray, z: np.ndarray,
-                           f_params: dict, z_params: dict):
+                           f_params: dict, z_params: dict, z0_mean: float):
 
         # If we don't have any repeated X values
         if self.repeated_X == False:
@@ -78,17 +78,17 @@ class BasicRegressor:
                 sigma2[Ju] = np.exp(z[u])
             Sigma2 = np.diag(sigma2)
 
-            Cy = self._find_gram_mmatrix(X, params=f_params) +Sigma2 + 1e-6 * np.eye(len(y))
+            Cy = self._find_gram_mmatrix(X, params=f_params) + Sigma2 + 1e-6 * np.eye(len(y))
             Kz = self._find_gram_mmatrix(self.Xu, params=z_params) + 1e-6 * np.eye(len(z))
 
         Ly = np.linalg.cholesky(Cy)
         Lz = np.linalg.cholesky(Kz)
 
         alpha_y = cho_solve((Ly, True), y)
-        alpha_z = cho_solve((Lz, True), z - self.z0_mean)
+        alpha_z = cho_solve((Lz, True), z - z0_mean)
 
         neg_logl = (0.5 * y.T @ alpha_y + np.log(np.diag(Ly)).sum() +
-                    0.5 * (z - self.z0_mean).T @ alpha_z + np.log(np.diag(Lz)).sum())
+                    0.5 * (z - z0_mean).T @ alpha_z + np.log(np.diag(Lz)).sum())
 
         return neg_logl
 
@@ -140,13 +140,13 @@ class BasicRegressor:
 
         return f_params, z_params, z
 
-    def _objective(self, theta, X, y, f_keys, z_keys, f_shapes, z_shapes, z_dim):
+    def _objective(self, theta, X, y, f_keys, z_keys, f_shapes, z_shapes, z_dim, z0_mean):
         """
         Called during training; takes array as inputs then converts it
         to a dictionary for the neg_log_likelihood function
         """
         f_params, z_params, z = self._unpack_params(theta, f_keys, z_keys, f_shapes, z_shapes, z_dim)
-        return self.neg_log_likelihood(X, y, z, f_params, z_params)
+        return self.neg_log_likelihood(X, y, z, f_params, z_params, z0_mean)
 
     def train(self, X, y, f_params0, z_params0, z0, z0_mean):
         """
@@ -154,11 +154,23 @@ class BasicRegressor:
         initial guess of the array, z.
         """
 
+        # Identify if we have repeated X values
+        self._identify_repeated_X(X)
+
+        # Pack initial parameters into single array for optimisation
+        theta0, f_keys, z_keys, f_shapes, z_shapes = self._pack_params(f_params0, z_params0, z0)
+
+        # Optimise
+        res = minimize(self._objective, theta0, args=(X, y, f_keys, z_keys, f_shapes, z_shapes, z0.shape[0], z0_mean), method="L-BFGS-B")
+
+        # Assign optimal hyperparameters
+        f_params, z_params, z_opt = self._unpack_params(res.x, f_keys, z_keys, f_shapes, z_shapes, z0.shape[0])
+        self.assign_hyperparameters(X, y, f_params, z_params, z_opt, z0_mean)
+
+    def _identify_repeated_X(self, X):
+
         # Find unique rows in X
         Xu, inverse_indices, counts = np.unique(X, axis=0, return_inverse=True, return_counts=True)
-
-        # Normalising constant for z
-        self.z0_mean = z0_mean
 
         # Determine whether or not we are looking at a problem with repeated inputs
         if np.all(counts == 1):
@@ -168,26 +180,25 @@ class BasicRegressor:
             self.Xu = Xu
 
         # If repeated X, create J_list that stores indices of unique X values
-        self.J_list = []
         if self.repeated_X == True:
+            self.J_list = []
             for u in range(len(Xu)):
                 idx = np.where(inverse_indices == u)[0]
                 self.J_list.append(idx)
             self.U = len(self.J_list)
 
-        theta0, f_keys, z_keys, f_shapes, z_shapes = self._pack_params(f_params0, z_params0, z0)
-        res = minimize(self._objective, theta0, args=(X, y, f_keys, z_keys, f_shapes, z_shapes, z0.shape[0]), method="L-BFGS-B")
-        f_params, z_params, z_opt = self._unpack_params(res.x, f_keys, z_keys, f_shapes, z_shapes, z0.shape[0])
-        self.assign_hyperparameters(X, y, f_params, z_params, z_opt)
+    def assign_hyperparameters(self, X, y, f_params, z_params, z_opt, z0_mean):
 
-    def assign_hyperparameters(self, X, y, f_params, z_params, z_opt):
-
-        # Assign training data and optimal hyperparameters
+        # Assign training data and hyperparameters
         self.X = X
         self.y = y
         self.f_params_opt = f_params
         self.z_params_opt = z_params
         self.z_opt = z_opt
+        self.z0_mean = z0_mean
+
+        # Identify if we have repeated X values
+        self._identify_repeated_X(X)        
 
         # If we don't have any repeated X values
         if self.repeated_X == False:

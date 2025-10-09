@@ -30,12 +30,19 @@ def test_repeated_x():
     # Extract true z
     z_true = np.log(np.unique(true_var))
 
-    # Fit model
+    # Initialise model
     m = BasicRegressor(ARD=False)
+
+    # Check we can assign hyperparameters and make predictions without errors
     f_params0 = {'scale': 1, 'lengthscale': 1}
     z_params0 = {'scale': 1, 'lengthscale': 1}
     z0 = np.zeros(3)
-    m.train(X, y, f_params0=f_params0, z_params0=z_params0, z0=z0, z0_mean=0)
+    z0_mean = 0
+    m.assign_hyperparameters(X, y, f_params=f_params0, z_params=z_params0, z_opt=z0, z0_mean=z0_mean)
+    mu_star0, var_star0, z_star0 = m.predict(X_star)
+
+    # Maximum likelihood
+    m.train(X, y, f_params0=f_params0, z_params0=z_params0, z0=z0, z0_mean=z0_mean)
 
     # Check we have detected repetaed inputs
     assert m.repeated_X == True
