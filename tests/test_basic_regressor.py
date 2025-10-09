@@ -8,7 +8,7 @@ def test_repeated_x():
     np.random.seed(42)
 
     # Inputs
-    n_repeat = 100
+    n_repeat = 200
     X = np.repeat(0, n_repeat)
     X = np.append(X, np.repeat(1, n_repeat))
     X = np.append(X, np.repeat(2, n_repeat))
@@ -21,7 +21,7 @@ def test_repeated_x():
     f_true = np.sin(X).ravel()
 
     # Generate noisy outputs
-    y = f_true + true_var * np.random.randn(len(X))
+    y = f_true + np.sqrt(true_var) * np.random.randn(len(X))
 
     # True over new inputs
     X_star = np.vstack(np.linspace(0, 2, 50))
@@ -60,4 +60,7 @@ def test_repeated_x():
     mu_star, var_star, z_star = m.predict(X_star)
 
     # Check predictions (mean)
-    np.allclose(mu_star, f_star_true, atol=0.2)
+    assert np.allclose(mu_star, f_star_true, atol=0.2)
+
+    # Check estimated noise variance at unique points
+    assert np.allclose(z_true, m.z_opt, atol=0.15)
