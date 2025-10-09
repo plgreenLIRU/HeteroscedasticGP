@@ -203,7 +203,7 @@ $$
 \hat{z}_* =k_z\left(X, x_*\right)^{\top} \hat{\alpha}_z
 $$
 
-Moreover, defining $\hat{L}_y v = \hat{k}_y(X, x_*)$ and $\hat{\alpha}_y$ as $C_y^{-1}y$ evaluated at our (estimated) maximum likelihood hyperparameters, we have
+Moreover, defining $\hat{L}\_y v = \hat{k}\_y(X, x\_*)$ and $\hat{\alpha}\_y$ as $C\_y^{-1}y$ evaluated at our (estimated) maximum likelihood hyperparameters, we have
 
 $$
 \mu_*=\hat{k}_f\left(X, x_*\right)^{\top} \hat{\alpha}_y 
