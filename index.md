@@ -11,7 +11,7 @@ $$
     y(x) = f(x) + \epsilon
 $$
 
-where $\epsilon \sim N(0, \sigma^2(x))$ i.e. the noise variance depends on $x$. We define $z$ as the log noise-variance. As well as a GP prior over the latent function
+where $\epsilon \sim N(0, \sigma^2(x))$ i.e. the noise variance depends on $x$. We define $z$ as the log noise-variance. As well as a Gaussian Process (GP) prior over the latent function
 
 $$
 p(f|X) = N(f; 0, k_f(X,X))
@@ -23,7 +23,7 @@ $$
 p(z|X) = N(z; z_0, k_z(X, X))
 $$
 
-where $k_f(\cdot, \cdot)$ has hyperparameters $\theta_f$ and $k_z(\cdot, \cdot)$ has hyperparameters $\theta_z$ and $z_0$ is the mean of our Gaussian Process over $z$.
+where $k_f(\cdot, \cdot)$ has hyperparameters $\theta_f$ and $k_z(\cdot, \cdot)$ has hyperparameters $\theta_z$ and $z_0$ is the mean of our GP over $z$.
 
 ## Maximum likelihood
 To get a maximum likelihood estimate of the model's hyperparameters we would, ideally, maximise
