@@ -32,11 +32,10 @@ If we assume that $p(f, z \mid X)=p(f \mid X) p(z \mid X)$ then we can write the
 
 $$
 p(y \mid X)=\iint p(y \mid f, z) p(f \mid X)p(z \mid x) d f d z
-\label{eq:likelihood}
 $$
 Note that our assumption is equivalent to saying that $p(z \mid f, X)=p(z \mid X)$ i.e. we're saying that the noise level depends only on the input, $X$, and not the latent function, $f$. This assumption would be invalid if, for example, we had a sensor whose noise depended on the amplitude being measured.
 
-The problem is difficult because equation (\ref{eq:likelihood}), the likelihood, is intractable because of where $z$ appears in $p(y|f,z) = N(y; f, k_f(X,X) + \text{diag}(\exp(z)))$.
+The likelihood is intractable because of where $z$ appears in $p(y|f,z) = N(y; f, k_f(X,X) + \text{diag}(\exp(z)))$.
 
 Assuming that we have somehow realised maximum-likelihood estimates of the noise variance, denoted $\hat{z}$, the we would realise predictions according to
 
@@ -46,7 +45,6 @@ $$
 = & \iint p\left(y_* \mid f_*, z_*\right) p\left(f, \mid x_*, X, y\right) p\left(z_* \mid x_*, X, \hat{z}\right) d f, d z_* \\
 = & \int p\left(f_* \mid x_*, X, y\right)\left[\int p\left(y_* \mid f_*, z_*\right) p\left(z_* \mid x_*, X, \hat{z}\right) d z_*\right] d f_*
 \end{aligned}
-\label{eq:prediction}
 $$
 where it is the term in the square bracket that is intractable.
 
@@ -55,16 +53,15 @@ In the BasicRegressor model we essentially ignore uncertainty in our estimate of
 
 ## Log-likelihood
 ### Definition
-To deal with the intractability in our likelihood we could fix $z=\hat{z}$ in which case, from equation (\ref{eq:likelihood}), we see that
+To deal with the intractability in our likelihood we could fix $z=\hat{z}$ in which case we realise the approximation
 
 $$
 \begin{aligned}
 p(y \mid X) & \approx p(\hat{z} \mid X) \int p(y \mid f, \hat{z})p(f \mid X) d f \\
 & = N(\hat{z}; z_0, k_z(X,X)) N\left(y ; 0, k_f(X, X)+\operatorname{diag}(\exp (\hat{z}))\right)
 \end{aligned}
-\label{eq:objective1}
 $$
-What's the best choice of $\hat{z}$ ? It seems sensible to choose the value that contributes the most to the integral with respect to $f$ in equation (\ref{eq:likelihood}) i.e. we define $\hat{z}$ as
+What's the best choice of $\hat{z}$ ? It seems sensible to choose the value that contributes the most to the integral with respect to $f$ in our likelihood i.e. we define $\hat{z}$ as
 
 $$
 \begin{aligned}
@@ -74,7 +71,7 @@ $$
 & =\underset{z}{\arg \max} \left[ N\left(y ; 0, k_f(X, X)+\operatorname{diag}(\exp (z))\right) N(z ; z_0, k_z(X,X)) \right]
 \end{aligned}
 $$
-which, setting $z=\hat{z}$, exactly recovers equation (\ref{eq:objective1}). For this reason, we can define our objective function as the logarithm of equation (\ref{eq:objective1}) and use it to optimise the parameters of our two kernels ( $\theta_f$ and $\theta_z$) as well as $\hat{z}$ i.e. we seek to maximise
+which, setting $z=\hat{z}$, exactly recovers the original expression for our approximate likelihood. For this reason, we can define our objective function as the logarithm of the approximate likelihood and use it to optimise the parameters of our two kernels ( $\theta_f$ and $\theta_z$) as well as $\hat{z}$ i.e. we seek to maximise
 
 $$
 \begin{aligned}
@@ -126,7 +123,7 @@ $$
 $$
 
 ## Predictions
-We now use a hat to denote quantities that have been calculated post-training (e.g. $\hat{\alpha}_y$ represents $C^{-1}_y y$ calculated with the kernel parameters, $\theta_f$, set equal to their estimated maximum likelihood value). We define $\hat{z}$ as our estimate of the noise variance at the observed inputs. To make predictions we must get around the intractable term in equation (\ref{eq:prediction}). We can do this by holding $z_*$ equal to its expected value i.e.
+We now use a hat to denote quantities that have been calculated post-training (e.g. $\hat{\alpha}_y$ represents $C^{-1}_yy$ calculated with the kernel parameters, $\theta_f$, set equal to their estimated maximum likelihood value). We define $\hat{z}$ as our estimate of the noise variance at the observed inputs. To make predictions we must get around the intractable term in our predictive equation. We can do this by holding $z_*$ equal to its expected value i.e.
 
 $$
 \int p\left(y_* \mid f_*, z_*\right) p\left(z_* \mid x_*, X, \hat{z}\right) d z_*
