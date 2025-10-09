@@ -32,10 +32,10 @@ def test_repeated_x():
 
     # Fit model
     m = BasicRegressor(ARD=False)
-    f_params0 = {'lengthscale': 1}
-    z_params0 = {'lengthscale': 1}
+    f_params0 = {'scale': 1, 'lengthscale': 1}
+    z_params0 = {'scale': 1, 'lengthscale': 1}
     z0 = np.zeros(3)
-    m.train(X, y, f_params0=f_params0, z_params0=z_params0, z0=z0)
+    m.train(X, y, f_params0=f_params0, z_params0=z_params0, z0=z0, z0_mean=0)
 
     # Check we have detected repetaed inputs
     assert m.repeated_X == True
@@ -50,7 +50,7 @@ def test_repeated_x():
     assert np.allclose(np.sqrt(np.exp(z_true)), np.sqrt(np.exp(m.z_opt)), atol=0.5)
 
     # Make predictions
-    mu_star, var_star = m.predict(X_star)
+    mu_star, var_star, z_star = m.predict(X_star)
 
     # Check predictions (mean)
     np.allclose(mu_star, f_star_true, atol=0.2)

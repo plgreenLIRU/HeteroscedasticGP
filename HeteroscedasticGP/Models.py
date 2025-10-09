@@ -9,13 +9,13 @@ class BasicRegressor:
 
         self.ARD = ARD
 
-    def find_gram_matrix(self, X: np.ndarray, params: dict, X_star: np.ndarray = None):
+    def _find_gram_mmatrix(self, X: np.ndarray, params: dict, X_star: np.ndarray=None):
         """
         Compute Gram (kernel) matrix between X and X_star under RBF kernel.
 
         Args:
             X: (N, D) array of training inputs
-            params: dict with "lengthscale" (or "lengthscale i" if ARD)
+            params: dict with "scale" and "lengthscale" (or "lengthscale i" if ARD)
             X_star: (M, D) array of test inputs (optional). 
                     If None, computes K(X, X).
 
@@ -34,7 +34,7 @@ class BasicRegressor:
             # Single shared lengthscale
             ls = params["lengthscale"]
             squared_dist = cdist(X, X_star, metric="sqeuclidean")
-            K = np.exp(-0.5 / (ls**2) * squared_dist)
+            K = params["scale"] * np.exp(-0.5 / (ls**2) * squared_dist)
 
         else:
             # Initialise log-kernel matrix
@@ -56,7 +56,7 @@ class BasicRegressor:
                 K -= 0.5 / (ls**2) * squared_dist
 
             # Exponentiate to get Gram matrix
-            K = np.exp(K)
+            K = params["scale"] * np.exp(K)
 
         return K
 
@@ -65,8 +65,8 @@ class BasicRegressor:
 
         # If we don't have any repeated X values
         if self.repeated_X == False:
-            Cy = self.find_gram_matrix(X, params=f_params) + np.diag(np.exp(z)) + 1e-6 * np.eye(len(y))
-            Kz = self.find_gram_matrix(X, params=z_params) + 1e-6 * np.eye(len(z))
+            Cy = self._find_gram_mmatrix(X, params=f_params) + np.diag(np.exp(z)) + 1e-6 * np.eye(len(y))
+            Kz = self._find_gram_mmatrix(X, params=z_params) + 1e-6 * np.eye(len(z))
 
         # If we do have repeated X values
         if self.repeated_X == True:
@@ -78,48 +78,77 @@ class BasicRegressor:
                 sigma2[Ju] = np.exp(z[u])
             Sigma2 = np.diag(sigma2)
 
-            Cy = self.find_gram_matrix(X, params=f_params) +Sigma2 + 1e-6 * np.eye(len(y))
-            Kz = self.find_gram_matrix(self.Xu, params=z_params) + 1e-6 * np.eye(len(z))
+            Cy = self._find_gram_mmatrix(X, params=f_params) +Sigma2 + 1e-6 * np.eye(len(y))
+            Kz = self._find_gram_mmatrix(self.Xu, params=z_params) + 1e-6 * np.eye(len(z))
 
         Ly = np.linalg.cholesky(Cy)
         Lz = np.linalg.cholesky(Kz)
 
         alpha_y = cho_solve((Ly, True), y)
-        alpha_z = cho_solve((Lz, True), z)
+        alpha_z = cho_solve((Lz, True), z - self.z0_mean)
 
         neg_logl = (0.5 * y.T @ alpha_y + np.log(np.diag(Ly)).sum() +
-                    0.5 * z.T @ alpha_z + np.log(np.diag(Lz)).sum())
+                    0.5 * (z - self.z0_mean).T @ alpha_z + np.log(np.diag(Lz)).sum())
 
         return neg_logl
 
-    def _pack_params(self, f_params: dict, z_params: dict, z: np.ndarray) -> np.ndarray:
+    def _pack_params(self, f_params: dict, z_params: dict, z: np.ndarray):
         """
-        Function to take parameter dictionaries & latent vector z and create
-        a corresponding numpy array.
+        Combine f_params, z_params, and latent vector z into a single 1D parameter array.
+        Handles both scalar and vector-valued parameters (e.g., ARD lengthscales).
+        Returns flattened parameter array plus metadata needed for unpacking.
         """
-        theta = np.concatenate([np.array(list(f_params.values()), dtype=float), np.array(list(z_params.values()), dtype=float), z.ravel()])    
-        return theta
+        f_keys = list(f_params.keys())
+        z_keys = list(z_params.keys())
 
-    def _unpack_params(self, theta: np.ndarray, f_keys, z_keys, z_dim: int):
+        # Record shapes (so ARD params can be reconstructed)
+        f_shapes = [np.shape(np.atleast_1d(f_params[k])) for k in f_keys]
+        z_shapes = [np.shape(np.atleast_1d(z_params[k])) for k in z_keys]
+
+        # Flatten and concatenate
+        f_values = np.concatenate([np.atleast_1d(f_params[k]).ravel() for k in f_keys])
+        z_values = np.concatenate([np.atleast_1d(z_params[k]).ravel() for k in z_keys])
+        theta = np.concatenate([f_values, z_values, z.ravel()])
+
+        return theta, f_keys, z_keys, f_shapes, z_shapes
+
+    def _unpack_params(self, theta: np.ndarray, f_keys, z_keys, f_shapes, z_shapes, z_dim: int):
         """
-        Function to convert parameter vector theta back into dictionaries
+        Convert flattened parameter vector theta back into dictionaries and latent vector z.
+        Shapes for each parameter are provided so ARD parameters are restored correctly.
         """
-        f_size = len(f_keys)
-        z_size = len(z_keys)        
-        f_params = {k: v for k, v in zip(f_keys, theta[:f_size])}
-        z_params = {k: v for k, v in zip(z_keys, theta[f_size:f_size+z_size])}
-        z = theta[f_size+z_size:].reshape(z_dim,)
+        f_params = {}
+        z_params = {}
+        idx = 0
+
+        # Rebuild f_params
+        for k, shape in zip(f_keys, f_shapes):
+            size = np.prod(shape)
+            value = theta[idx:idx + size].reshape(shape)
+            f_params[k] = value.item() if value.size == 1 else value
+            idx += size
+
+        # Rebuild z_params
+        for k, shape in zip(z_keys, z_shapes):
+            size = np.prod(shape)
+            value = theta[idx:idx + size].reshape(shape)
+            z_params[k] = value.item() if value.size == 1 else value
+            idx += size
+
+        # Remaining are latent z values
+        z = theta[idx:].reshape(z_dim,)
+
         return f_params, z_params, z
 
-    def _objective(self, theta, X, y, f_keys, z_keys, z_dim):
+    def _objective(self, theta, X, y, f_keys, z_keys, f_shapes, z_shapes, z_dim):
         """
         Called during training; takes array as inputs then converts it
         to a dictionary for the neg_log_likelihood function
         """
-        f_params, z_params, z = self._unpack_params(theta, f_keys, z_keys, z_dim)
+        f_params, z_params, z = self._unpack_params(theta, f_keys, z_keys, f_shapes, z_shapes, z_dim)
         return self.neg_log_likelihood(X, y, z, f_params, z_params)
 
-    def train(self, X, y, f_params0, z_params0, z0):
+    def train(self, X, y, f_params0, z_params0, z0, z0_mean):
         """
         Train model based on initial guess of f parameters, z parameters, and
         initial guess of the array, z.
@@ -127,6 +156,9 @@ class BasicRegressor:
 
         # Find unique rows in X
         Xu, inverse_indices, counts = np.unique(X, axis=0, return_inverse=True, return_counts=True)
+
+        # Normalising constant for z
+        self.z0_mean = z0_mean
 
         # Determine whether or not we are looking at a problem with repeated inputs
         if np.all(counts == 1):
@@ -143,9 +175,9 @@ class BasicRegressor:
                 self.J_list.append(idx)
             self.U = len(self.J_list)
 
-        theta0 = self._pack_params(f_params0, z_params0, z0)
-        res = minimize(self._objective, theta0, args=(X, y, list(f_params0.keys()), list(z_params0.keys()), z0.shape[0]), method="L-BFGS-B")
-        f_params, z_params, z_opt = self._unpack_params(res.x, f_params0.keys(), z_params0.keys(), z0.shape[0])
+        theta0, f_keys, z_keys, f_shapes, z_shapes = self._pack_params(f_params0, z_params0, z0)
+        res = minimize(self._objective, theta0, args=(X, y, f_keys, z_keys, f_shapes, z_shapes, z0.shape[0]), method="L-BFGS-B")
+        f_params, z_params, z_opt = self._unpack_params(res.x, f_keys, z_keys, f_shapes, z_shapes, z0.shape[0])
         self.assign_hyperparameters(X, y, f_params, z_params, z_opt)
 
     def assign_hyperparameters(self, X, y, f_params, z_params, z_opt):
@@ -159,8 +191,8 @@ class BasicRegressor:
 
         # If we don't have any repeated X values
         if self.repeated_X == False:
-            self.Cy = self.find_gram_matrix(X, params=f_params) + np.diag(np.exp(z_opt)) + 1e-6 * np.eye(len(y))
-            Kz = self.find_gram_matrix(X, params=z_params) + 1e-6 * np.eye(len(z_opt))
+            self.Cy = self._find_gram_mmatrix(X, params=f_params) + np.diag(np.exp(z_opt)) + 1e-6 * np.eye(len(y))
+            Kz = self._find_gram_mmatrix(X, params=z_params) + 1e-6 * np.eye(len(z_opt))
 
         # If we do have repeated X values
         if self.repeated_X == True:
@@ -172,25 +204,25 @@ class BasicRegressor:
                 sigma2[Ju] = np.exp(z_opt[u])
             Sigma2 = np.diag(sigma2)
 
-            self.Cy = self.find_gram_matrix(X, params=f_params) +Sigma2 + 1e-6 * np.eye(len(y))
-            Kz = self.find_gram_matrix(self.Xu, params=z_params) + 1e-6 * np.eye(len(z_opt))
+            self.Cy = self._find_gram_mmatrix(X, params=f_params) + Sigma2 + 1e-6 * np.eye(len(y))
+            Kz = self._find_gram_mmatrix(self.Xu, params=z_params) + 1e-6 * np.eye(len(z_opt))
 
         self.Ly = np.linalg.cholesky(self.Cy)
         Lz = np.linalg.cholesky(Kz)
         self.alpha_y = cho_solve((self.Ly, True), y)
-        self.alpha_z = cho_solve((Lz, True), z_opt)
+        self.alpha_z = cho_solve((Lz, True), z_opt - self.z0_mean)
 
     def predict(self, X_star):
         
         # Evaluate kernels evaluated between training and sprediction inputs
-        K_f_star = self.find_gram_matrix(X=self.X, params=self.f_params_opt, X_star=X_star)
+        K_f_star = self._find_gram_mmatrix(X=self.X, params=self.f_params_opt, X_star=X_star)
         if self.repeated_X == False:
-            K_z_star = self.find_gram_matrix(X=self.X, params=self.z_params_opt, X_star=X_star)
+            K_z_star = self._find_gram_mmatrix(X=self.X, params=self.z_params_opt, X_star=X_star)
         if self.repeated_X == True:
-            K_z_star = self.find_gram_matrix(X=self.Xu, params=self.z_params_opt, X_star=X_star)
+            K_z_star = self._find_gram_mmatrix(X=self.Xu, params=self.z_params_opt, X_star=X_star)
 
         # Preditive z mean
-        z_star = K_z_star.T @ self.alpha_z
+        z_star = self.z0_mean + K_z_star.T @ self.alpha_z
         
         # Predictive y mean
         mu_star = K_f_star.T @ self.alpha_y
@@ -199,4 +231,4 @@ class BasicRegressor:
         v = solve_triangular(self.Ly, K_f_star, lower=True)
         var_star = np.exp(z_star) + 1 - np.diag(v.T @ v)
 
-        return mu_star, var_star
+        return mu_star, var_star, z_star
