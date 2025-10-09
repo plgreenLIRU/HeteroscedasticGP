@@ -6,7 +6,12 @@ from scipy.optimize import minimize
 class BasicRegressor:
 
     def __init__(self, ARD):
+        """
+        Initialize the BasicRegressor.
 
+        Args:
+            ARD (bool): If True, use Automatic Relevance Determination (ARD) for kernel lengthscales.
+        """
         self.ARD = ARD
 
     def _find_gram_mmatrix(self, X: np.ndarray, params: dict, X_star: np.ndarray=None):
@@ -62,7 +67,20 @@ class BasicRegressor:
 
     def neg_log_likelihood(self, X: np.ndarray, y: np.ndarray, z: np.ndarray,
                            f_params: dict, z_params: dict, z0_mean: float):
+        """
+        Compute the negative log-likelihood for the heteroscedastic GP model.
 
+        Args:
+            X: Training inputs.
+            y: Training targets.
+            z: Latent log-variance values.
+            f_params: Kernel parameters for function.
+            z_params: Kernel parameters for variance.
+            z0_mean: Mean of latent log-variance.
+
+        Returns:
+            neg_logl: Negative log-likelihood value.
+        """
         # If we don't have any repeated X values
         if self.repeated_X == False:
             Cy = self._find_gram_mmatrix(X, params=f_params) + np.diag(np.exp(z)) + 1e-6 * np.eye(len(y))
@@ -116,6 +134,15 @@ class BasicRegressor:
         """
         Convert flattened parameter vector theta back into dictionaries and latent vector z.
         Shapes for each parameter are provided so ARD parameters are restored correctly.
+
+        Args:
+            theta: Flattened parameter array.
+            f_keys, z_keys: Keys for function and variance parameters.
+            f_shapes, z_shapes: Shapes for each parameter.
+            z_dim: Dimension of latent vector z.
+
+        Returns:
+            f_params, z_params, z: Unpacked parameters and latent vector.
         """
         f_params = {}
         z_params = {}
@@ -142,16 +169,32 @@ class BasicRegressor:
 
     def _objective(self, theta, X, y, f_keys, z_keys, f_shapes, z_shapes, z_dim, z0_mean):
         """
-        Called during training; takes array as inputs then converts it
-        to a dictionary for the neg_log_likelihood function
+        Objective function for optimizer. Converts parameter array to dictionaries and computes negative log-likelihood.
+
+        Args:
+            theta: Flattened parameter array.
+            X, y: Training data.
+            f_keys, z_keys, f_shapes, z_shapes: Metadata for unpacking.
+            z_dim: Dimension of latent vector z.
+            z0_mean: Mean of latent log-variance.
+
+        Returns:
+            Negative log-likelihood value.
         """
         f_params, z_params, z = self._unpack_params(theta, f_keys, z_keys, f_shapes, z_shapes, z_dim)
         return self.neg_log_likelihood(X, y, z, f_params, z_params, z0_mean)
 
     def train(self, X, y, f_params0, z_params0, z0, z0_mean):
         """
-        Train model based on initial guess of f parameters, z parameters, and
-        initial guess of the array, z.
+        Train the heteroscedastic GP model by optimizing hyperparameters and latent variables.
+
+        Args:
+            X: Training inputs.
+            y: Training targets.
+            f_params0: Initial function kernel parameters.
+            z_params0: Initial variance kernel parameters.
+            z0: Initial latent log-variance.
+            z0_mean: Mean of latent log-variance.
         """
 
         # Identify if we have repeated X values
@@ -168,6 +211,12 @@ class BasicRegressor:
         self.assign_hyperparameters(X, y, f_params, z_params, z_opt, z0_mean)
 
     def _identify_repeated_X(self, X):
+        """
+        Identify repeated input values in X and set up indexing for unique values.
+
+        Args:
+            X: Input data.
+        """
 
         # Find unique rows in X
         Xu, inverse_indices, counts = np.unique(X, axis=0, return_inverse=True, return_counts=True)
@@ -188,6 +237,17 @@ class BasicRegressor:
             self.U = len(self.J_list)
 
     def assign_hyperparameters(self, X, y, f_params, z_params, z_opt, z0_mean):
+        """
+        Assign optimized hyperparameters and latent variables to the model.
+
+        Args:
+            X: Training inputs.
+            y: Training targets.
+            f_params: Optimized function kernel parameters.
+            z_params: Optimized variance kernel parameters.
+            z_opt: Optimized latent log-variance.
+            z0_mean: Mean of latent log-variance.
+        """
 
         # Assign training data and hyperparameters
         self.X = X
@@ -224,6 +284,17 @@ class BasicRegressor:
         self.alpha_z = cho_solve((Lz, True), z_opt - self.z0_mean)
 
     def predict(self, X_star):
+        """
+        Predict mean and variance for new inputs.
+
+        Args:
+            X_star: Test inputs.
+
+        Returns:
+            mu_star: Predictive mean.
+            var_star: Predictive variance.
+            z_star: Predicted latent log-variance.
+        """
         
         # Evaluate kernels evaluated between training and sprediction inputs
         K_f_star = self._find_gram_mmatrix(X=self.X, params=self.f_params_opt, X_star=X_star)
