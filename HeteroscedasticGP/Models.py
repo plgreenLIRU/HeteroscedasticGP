@@ -156,9 +156,6 @@ class BaseGP:
             noise_var0 : Initial noise variance.
         """
 
-        # Identify if we have repeated X values
-        self._identify_repeated_X(X)
-
         # Pack initial parameters into single array for optimisation
         theta0, f_keys, f_shapes = self._pack_params(f_params0, noise_var0)
 
