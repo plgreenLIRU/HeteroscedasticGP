@@ -54,13 +54,13 @@ def test_repeated_x():
     assert np.array_equal(m.J_list[2], np.arange(n_repeat*2, n_repeat*3))
 
     # Check noise std
-    assert np.allclose(np.sqrt(np.exp(z_true)), np.sqrt(np.exp(m.z_opt)), atol=0.5)
+    assert np.allclose(np.sqrt(np.exp(z_true)), np.sqrt(np.exp(m.z_opt)), atol=0.05)
 
     # Make predictions
     mu_star, var_star, z_star = m.predict(X_star)
 
     # Check predictions (mean)
-    assert np.allclose(mu_star, f_star_true, atol=0.2)
+    assert np.allclose(mu_star, f_star_true, atol=0.15)
 
     # Check estimated noise variance at unique points
     assert np.allclose(z_true, m.z_opt, atol=0.15)
