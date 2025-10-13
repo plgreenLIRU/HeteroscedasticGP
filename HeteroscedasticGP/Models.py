@@ -3,18 +3,18 @@ from scipy.spatial.distance import cdist
 from scipy.linalg import cho_solve, solve_triangular
 from scipy.optimize import minimize
 
-class BasicRegressor:
+class BaseGP:
 
     def __init__(self, ARD):
         """
-        Initialize the BasicRegressor.
+        Initialise Gaussian Process
 
         Args:
             ARD (bool): If True, use Automatic Relevance Determination (ARD) for kernel lengthscales.
         """
         self.ARD = ARD
 
-    def _find_gram_mmatrix(self, X: np.ndarray, params: dict, X_star: np.ndarray=None):
+    def _find_gram_matrix(self, X: np.ndarray, params: dict, X_star: np.ndarray=None):
         """
         Compute Gram (kernel) matrix between X and X_star under RBF kernel.
 
@@ -64,6 +64,157 @@ class BasicRegressor:
             K = params["scale"] * np.exp(K)
 
         return K
+    
+    def neg_log_likelihood(self, X: np.ndarray, y: np.ndarray, f_params: dict, noise_var):
+        """
+        Compute the negative log-likelihood for the heteroscedastic GP model.
+
+        Args:
+            X: Training inputs.
+            y: Training targets.
+            z: Latent log-variance values.
+            f_params: Kernel parameters for function.
+            noise_var : noise_variance
+
+        Returns:
+            neg_logl: Negative log-likelihood value.
+        """
+        Cy = self._find_gram_matrix(X, params=f_params) + np.eye(len(y)) * (noise_var + 1e-6)
+        Ly = np.linalg.cholesky(Cy)
+        alpha_y = cho_solve((Ly, True), y)
+        neg_logl = 0.5 * y.T @ alpha_y + np.log(np.diag(Ly)).sum()
+        return neg_logl
+
+    def _pack_params(self, f_params: dict, noise_var: float):
+        """
+        Combine f_params and noise variance into a single 1D parameter array.
+
+        Handles both scalar and vector-valued parameters (e.g., ARD lengthscales).
+        Returns flattened parameter array plus metadata needed for unpacking.
+        """
+        f_keys = list(f_params.keys())
+        f_shapes = [np.shape(np.atleast_1d(f_params[k])) for k in f_keys]
+
+        # Flatten and concatenate
+        f_values = np.concatenate([np.atleast_1d(f_params[k]).ravel() for k in f_keys])
+
+        # Append noise variance as a single scalar
+        theta = np.concatenate([f_values, np.atleast_1d(noise_var)])
+
+        return theta, f_keys, f_shapes
+
+    def _unpack_params(self, theta: np.ndarray, f_keys, f_shapes):
+        """
+        Convert flattened parameter vector theta back into f_params and noise variance.
+
+        Args:
+            theta: Flattened parameter array.
+            f_keys: Keys for function parameters.
+            f_shapes: Shapes for each parameter.
+
+        Returns:
+            f_params: Dictionary of unpacked parameters.
+            noise_var: Scalar noise variance.
+        """
+        f_params = {}
+        idx = 0
+
+        # Rebuild f_params
+        for k, shape in zip(f_keys, f_shapes):
+            size = np.prod(shape)
+            value = theta[idx:idx + size].reshape(shape)
+            f_params[k] = value.item() if value.size == 1 else value
+            idx += size
+
+        # Remaining element is noise variance
+        noise_var = float(theta[idx])
+
+        return f_params, noise_var
+    
+    def _objective(self, theta, X, y, f_keys, f_shapes):
+        """
+        Objective function for optimizer. Converts parameter array to dictionaries and computes negative log-likelihood.
+
+        Args:
+            theta: Flattened parameter array.
+            X, y: Training data.
+            f_keys, f_shapes: Metadata for unpacking.
+        Returns:
+            Negative log-likelihood value.
+        """
+        f_params, noise_var = self._unpack_params(theta, f_keys, f_shapes)
+        return self.neg_log_likelihood(X, y, f_params, noise_var)
+
+    def train(self, X, y, f_params0, noise_var0):
+        """
+        Train the heteroscedastic GP model by optimizing hyperparameters and latent variables.
+
+        Args:
+            X: Training inputs.
+            y: Training targets.
+            f_params0: Initial function kernel parameters.
+            noise_var0 : Initial noise variance.
+        """
+
+        # Identify if we have repeated X values
+        self._identify_repeated_X(X)
+
+        # Pack initial parameters into single array for optimisation
+        theta0, f_keys, f_shapes = self._pack_params(f_params0, noise_var0)
+
+        # Optimise
+        res = minimize(self._objective, theta0, args=(X, y, f_keys, f_shapes), method="L-BFGS-B")
+
+        # Assign optimal hyperparameters
+        f_params, noise_var = self._unpack_params(res.x, f_keys, f_shapes)
+        self.assign_hyperparameters(X, y, f_params, noise_var)
+
+    def assign_hyperparameters(self, X, y, f_params, noise_var):
+        """
+        Assign optimized hyperparameters and latent variables to the model.
+
+        Args:
+            X: Training inputs.
+            y: Training targets.
+            f_params: Optimized function kernel parameters.
+            noise_var : noise variance for likelihood
+        """
+
+        # Assign training data and hyperparameters
+        self.X = X
+        self.y = y
+        self.f_params_opt = f_params
+        self.noise_var = noise_var
+
+        self.Cy = self._find_gram_matrix(X, params=f_params) + np.eye(len(y)) * (noise_var + 1e-6)
+        self.Ly = np.linalg.cholesky(self.Cy)
+        self.alpha_y = cho_solve((self.Ly, True), y)
+
+    def predict(self, X_star):
+        """
+        Predict mean and variance for new inputs.
+
+        Args:
+            X_star: Test inputs.
+
+        Returns:
+            mu_star: Predictive mean.
+            var_star: Predictive variance.
+        """
+        
+        # Evaluate kernels evaluated between training and sprediction inputs
+        K_f_star = self._find_gram_matrix(X=self.X, params=self.f_params_opt, X_star=X_star)
+
+        # Predictive y mean
+        mu_star = K_f_star.T @ self.alpha_y
+
+        # Predictive variance
+        v = solve_triangular(self.Ly, K_f_star, lower=True)
+        var_star = self.noise_var + 1 - np.diag(v.T @ v)
+
+        return mu_star, var_star
+
+class BasicRegressor(BaseGP):
 
     def neg_log_likelihood(self, X: np.ndarray, y: np.ndarray, z: np.ndarray,
                            f_params: dict, z_params: dict, z0_mean: float):
@@ -83,8 +234,8 @@ class BasicRegressor:
         """
         # If we don't have any repeated X values
         if self.repeated_X == False:
-            Cy = self._find_gram_mmatrix(X, params=f_params) + np.diag(np.exp(z)) + 1e-6 * np.eye(len(y))
-            Kz = self._find_gram_mmatrix(X, params=z_params) + 1e-6 * np.eye(len(z))
+            Cy = self._find_gram_matrix(X, params=f_params) + np.diag(np.exp(z)) + 1e-6 * np.eye(len(y))
+            Kz = self._find_gram_matrix(X, params=z_params) + 1e-6 * np.eye(len(z))
 
         # If we do have repeated X values
         if self.repeated_X == True:
@@ -96,8 +247,8 @@ class BasicRegressor:
                 sigma2[Ju] = np.exp(z[u])
             Sigma2 = np.diag(sigma2)
 
-            Cy = self._find_gram_mmatrix(X, params=f_params) + Sigma2 + 1e-6 * np.eye(len(y))
-            Kz = self._find_gram_mmatrix(self.Xu, params=z_params) + 1e-6 * np.eye(len(z))
+            Cy = self._find_gram_matrix(X, params=f_params) + Sigma2 + 1e-6 * np.eye(len(y))
+            Kz = self._find_gram_matrix(self.Xu, params=z_params) + 1e-6 * np.eye(len(z))
 
         Ly = np.linalg.cholesky(Cy)
         Lz = np.linalg.cholesky(Kz)
@@ -262,8 +413,8 @@ class BasicRegressor:
 
         # If we don't have any repeated X values
         if self.repeated_X == False:
-            self.Cy = self._find_gram_mmatrix(X, params=f_params) + np.diag(np.exp(z_opt)) + 1e-6 * np.eye(len(y))
-            Kz = self._find_gram_mmatrix(X, params=z_params) + 1e-6 * np.eye(len(z_opt))
+            self.Cy = self._find_gram_matrix(X, params=f_params) + np.diag(np.exp(z_opt)) + 1e-6 * np.eye(len(y))
+            Kz = self._find_gram_matrix(X, params=z_params) + 1e-6 * np.eye(len(z_opt))
 
         # If we do have repeated X values
         if self.repeated_X == True:
@@ -275,8 +426,8 @@ class BasicRegressor:
                 sigma2[Ju] = np.exp(z_opt[u])
             Sigma2 = np.diag(sigma2)
 
-            self.Cy = self._find_gram_mmatrix(X, params=f_params) + Sigma2 + 1e-6 * np.eye(len(y))
-            Kz = self._find_gram_mmatrix(self.Xu, params=z_params) + 1e-6 * np.eye(len(z_opt))
+            self.Cy = self._find_gram_matrix(X, params=f_params) + Sigma2 + 1e-6 * np.eye(len(y))
+            Kz = self._find_gram_matrix(self.Xu, params=z_params) + 1e-6 * np.eye(len(z_opt))
 
         self.Ly = np.linalg.cholesky(self.Cy)
         Lz = np.linalg.cholesky(Kz)
@@ -297,11 +448,11 @@ class BasicRegressor:
         """
         
         # Evaluate kernels evaluated between training and sprediction inputs
-        K_f_star = self._find_gram_mmatrix(X=self.X, params=self.f_params_opt, X_star=X_star)
+        K_f_star = self._find_gram_matrix(X=self.X, params=self.f_params_opt, X_star=X_star)
         if self.repeated_X == False:
-            K_z_star = self._find_gram_mmatrix(X=self.X, params=self.z_params_opt, X_star=X_star)
+            K_z_star = self._find_gram_matrix(X=self.X, params=self.z_params_opt, X_star=X_star)
         if self.repeated_X == True:
-            K_z_star = self._find_gram_mmatrix(X=self.Xu, params=self.z_params_opt, X_star=X_star)
+            K_z_star = self._find_gram_matrix(X=self.Xu, params=self.z_params_opt, X_star=X_star)
 
         # Preditive z mean
         z_star = self.z0_mean + K_z_star.T @ self.alpha_z
