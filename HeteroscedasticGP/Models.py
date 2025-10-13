@@ -145,7 +145,7 @@ class BaseGP:
         f_params, noise_var = self._unpack_params(theta, f_keys, f_shapes)
         return self.neg_log_likelihood(X, y, f_params, noise_var)
 
-    def train(self, X, y, f_params0, noise_var0):
+    def train(self, X, y, f_params0, noise_var0, bounds=None):
         """
         Train the heteroscedastic GP model by optimizing hyperparameters and latent variables.
 
@@ -160,7 +160,8 @@ class BaseGP:
         theta0, f_keys, f_shapes = self._pack_params(f_params0, noise_var0)
 
         # Optimise
-        bounds = [(1e-6, None)] * len(theta0)
+        if bounds is None:
+            bounds = [(1e-6, None)] * len(theta0)
         res = minimize(self._objective, theta0, args=(X, y, f_keys, f_shapes), method="L-BFGS-B", bounds=bounds)
 
         # Assign optimal hyperparameters
@@ -333,7 +334,7 @@ class BasicRegressor(BaseGP):
         f_params, z_params, z = self._unpack_params(theta, f_keys, z_keys, f_shapes, z_shapes, z_dim)
         return self.neg_log_likelihood(X, y, z, f_params, z_params, z0_mean)
 
-    def train(self, X, y, f_params0, z_params0, z0, z0_mean):
+    def train(self, X, y, f_params0, z_params0, z0, z0_mean, bounds=None):
         """
         Train the heteroscedastic GP model by optimizing hyperparameters and latent variables.
 
@@ -353,7 +354,8 @@ class BasicRegressor(BaseGP):
         theta0, f_keys, z_keys, f_shapes, z_shapes = self._pack_params(f_params0, z_params0, z0)
 
         # Optimise
-        bounds = [(1e-6, None)] * len(theta0)
+        if bounds is None:
+            bounds = [(1e-6, None)] * len(theta0)
         res = minimize(self._objective, theta0, args=(X, y, f_keys, z_keys, f_shapes, z_shapes, z0.shape[0], z0_mean), method="L-BFGS-B", bounds=bounds)
 
         # Assign optimal hyperparameters
