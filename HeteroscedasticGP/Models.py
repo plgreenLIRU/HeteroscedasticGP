@@ -160,7 +160,8 @@ class BaseGP:
         theta0, f_keys, f_shapes = self._pack_params(f_params0, noise_var0)
 
         # Optimise
-        res = minimize(self._objective, theta0, args=(X, y, f_keys, f_shapes), method="L-BFGS-B")
+        bounds = [(1e-6, None)] * len(theta0)
+        res = minimize(self._objective, theta0, args=(X, y, f_keys, f_shapes), method="L-BFGS-B", bounds=bounds)
 
         # Assign optimal hyperparameters
         f_params, noise_var = self._unpack_params(res.x, f_keys, f_shapes)
@@ -207,7 +208,7 @@ class BaseGP:
 
         # Predictive variance
         v = solve_triangular(self.Ly, K_f_star, lower=True)
-        var_star = self.noise_var + 1 - np.diag(v.T @ v)
+        var_star = self.noise_var + self.f_params_opt['scale'] - np.diag(v.T @ v)
 
         return mu_star, var_star
 
@@ -459,6 +460,6 @@ class BasicRegressor(BaseGP):
 
         # Predictive variance
         v = solve_triangular(self.Ly, K_f_star, lower=True)
-        var_star = np.exp(z_star) + 1 - np.diag(v.T @ v)
+        var_star = np.exp(z_star) + self.f_params_opt['scale'] - np.diag(v.T @ v)
 
         return mu_star, var_star, z_star
