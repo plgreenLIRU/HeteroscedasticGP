@@ -353,7 +353,8 @@ class BasicRegressor(BaseGP):
         theta0, f_keys, z_keys, f_shapes, z_shapes = self._pack_params(f_params0, z_params0, z0)
 
         # Optimise
-        res = minimize(self._objective, theta0, args=(X, y, f_keys, z_keys, f_shapes, z_shapes, z0.shape[0], z0_mean), method="L-BFGS-B")
+        bounds = [(1e-6, None)] * len(theta0)
+        res = minimize(self._objective, theta0, args=(X, y, f_keys, z_keys, f_shapes, z_shapes, z0.shape[0], z0_mean), method="L-BFGS-B", bounds=bounds)
 
         # Assign optimal hyperparameters
         f_params, z_params, z_opt = self._unpack_params(res.x, f_keys, z_keys, f_shapes, z_shapes, z0.shape[0])
