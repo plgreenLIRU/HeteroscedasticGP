@@ -27,7 +27,8 @@ def test_1D():
     noise_var0 = 0.1
 
     # Train GP model
-    gp.train(np.vstack(X), y, f_params0=f_params0, noise_var0=noise_var0)
+    bounds = ((1e-6, None), (1e-6, None))  # Bounds for scale and lengthscale
+    gp.train(np.vstack(X), y, f_params0=f_params0, noise_var0=noise_var0, bounds=bounds)
 
     # Predict on test points
     mu_star_gp, var_star_gp = gp.predict(np.vstack(X_star))

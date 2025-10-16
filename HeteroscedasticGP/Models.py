@@ -154,14 +154,13 @@ class BaseGP:
             y: Training targets.
             f_params0: Initial function kernel parameters.
             noise_var0 : Initial noise variance.
+            bounds: optional bounds on optimisation
         """
 
         # Pack initial parameters into single array for optimisation
         theta0, f_keys, f_shapes = self._pack_params(f_params0, noise_var0)
 
         # Optimise
-        if bounds is None:
-            bounds = [(1e-6, None)] * len(theta0)
         res = minimize(self._objective, theta0, args=(X, y, f_keys, f_shapes), method="L-BFGS-B", bounds=bounds)
 
         # Assign optimal hyperparameters
@@ -345,6 +344,7 @@ class BasicRegressor(BaseGP):
             z_params0: Initial variance kernel parameters.
             z0: Initial latent log-variance.
             z0_mean: Mean of latent log-variance.
+            bounds: optional bounds on optimisation
         """
 
         # Identify if we have repeated X values
@@ -354,8 +354,6 @@ class BasicRegressor(BaseGP):
         theta0, f_keys, z_keys, f_shapes, z_shapes = self._pack_params(f_params0, z_params0, z0)
 
         # Optimise
-        if bounds is None:
-            bounds = [(1e-6, None)] * len(theta0)
         res = minimize(self._objective, theta0, args=(X, y, f_keys, z_keys, f_shapes, z_shapes, z0.shape[0], z0_mean), method="L-BFGS-B", bounds=bounds)
 
         # Assign optimal hyperparameters
